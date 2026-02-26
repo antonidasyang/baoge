@@ -4,16 +4,21 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",
+    "tui": "tsx src/tui.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@lancedb/lancedb": "0.26.2",
-    "@mariozechner/pi-agent-core": "0.55.0",
-    "@mariozechner/pi-ai": "0.55.0",
+    "@mariozechner/pi-agent-core": "0.55.1",
+    "@mariozechner/pi-ai": "0.55.1",
+    "@mariozechner/pi-coding-agent": "0.55.1",
+    "@mariozechner/pi-tui": "0.55.1",
+    "@sinclair/typebox": "0.34.48",
     "@tailwindcss/postcss": "^4.2.1",
     "@xenova/transformers": "2.17.2",
+    "chalk": "^5.6.2",
     "clsx": "^2.1.1",
     "dotenv": "17.3.1",
     "imapflow": "^1.2.10",

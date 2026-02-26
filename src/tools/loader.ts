@@ -57,7 +57,6 @@ function registerExports(module: any, tools: any[]) {
         description: skill.metadata?.description || skill.description,
         parameters: zodToJsonSchema(skill.parameters),
         execute: async (toolCallId: string, params: any) => {
-          console.log(`\n⚡ [技能激活] ${skillLabel}`);
           const result = await skill.execute(params);
           return {
             content: [{ type: 'text', text: String(result) }],
