@@ -1,0 +1,16 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  {/* 标志性橙色背景 */}
+  <rect width="100" height="100" rx="20" fill="#f97316" />
+  
+  {/* 纯白线条豹头 */}
+  <path 
+    d="M50 15L25 35L30 55L50 85L70 55L75 35L50 15Z" 
+    stroke="white" 
+    stroke-width="4" 
+    stroke-linejoin="round"
+  />
+  <path d="M25 35L15 15L35 25" stroke="white" stroke-width="4" stroke-linejoin="round" />
+  <path d="M75 35L85 15L65 25" stroke="white" stroke-width="4" stroke-linejoin="round" />
+  <path d="M35 45L45 48" stroke="white" stroke-width="6" stroke-linecap="round" />
+  <path d="M65 45L55 48" stroke="white" stroke-width="6" stroke-linecap="round" />
+</svg>

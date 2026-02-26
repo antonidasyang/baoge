@@ -1,0 +1,7 @@
+{
+  "llmApiKey": "your_api_key_here",
+  "llmModel": "gpt-4o-mini",
+  "llmBaseUrl": "https://api.openai.com/v1",
+  "llmEmbeddingModel": "text-embedding-3-small",
+  "llmEmbeddingBaseUrl": "https://api.openai.com/v1"
+}
