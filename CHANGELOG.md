@@ -5,6 +5,21 @@ All notable changes to 豹哥 (Baoge) will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [1.2.0] - 2025-02-26
+
+### Added
+
+- **全局 `baoge` 命令**：`baoge start`、`baoge start --daemon`、`baoge tui`、`baoge skill`
+- **一键安装**：`install.sh` 从 GitHub Release 下载并安装
+- **发布打包**：`pnpm dist` 生成 `dist/baoge.tar.gz` 供 Release 发布
+- **技能管理**：`baoge skill list/add/remove` 与 Web `/skills` 页面
+
+### Changed
+
+- `package.json` 新增 `bin` 字段，支持 `pnpm add -g .` 全局安装
+
+---
+
 ## [1.1.0] - 2025-02-26
 
 ### Added

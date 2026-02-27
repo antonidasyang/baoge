@@ -1,12 +1,19 @@
 {
   "name": "baoge",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
+  "bin": {
+    "baoge": "./bin/baoge.js"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "tui": "tsx src/cli/tui.ts",
+    "skill": "tsx src/cli/skill.ts",
     "build": "next build",
+    "postbuild": "node scripts/postbuild.mjs",
     "start": "next start",
+    "start:standalone": "node .next/standalone/server.js",
+    "dist": "bash scripts/mkdist.sh",
     "lint": "next lint"
   },
   "dependencies": {

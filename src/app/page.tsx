@@ -30,6 +30,7 @@ export default function BaogePage() {
   const [attachedFiles, setAttachedFiles] = useState<FileWithPath[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [skillsCount, setSkillsCount] = useState(0);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,6 +43,14 @@ export default function BaogePage() {
       if (data.sessions) setSessions(data.sessions);
       return data.sessions;
     } catch (e) { return []; }
+  }, []);
+
+  const refreshSkills = useCallback(async () => {
+    try {
+      const res = await fetch('/api/skills');
+      const data = await res.json();
+      setSkillsCount(data.skills?.length ?? 0);
+    } catch { setSkillsCount(0); }
   }, []);
 
   const createNewSession = async () => {
@@ -66,6 +75,7 @@ export default function BaogePage() {
 
   useEffect(() => {
     refreshSessions().then(list => { if (list && list.length > 0) switchSession(list[0].id); else createNewSession(); });
+    refreshSkills();
   }, []);
 
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
@@ -210,6 +220,10 @@ export default function BaogePage() {
         <div className="flex items-center gap-3 px-2 mb-8 mt-2 cursor-pointer" onClick={() => refreshSessions()}><div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20"><LeopardLogo className="w-7 h-7 text-white" /></div><div className="hidden md:block italic tracking-tighter"><h1 className="font-black text-xl leading-tight">BAOGE</h1><p className="text-[9px] text-white/30 font-mono tracking-widest uppercase">Stealth Mode On</p></div></div>
         <button onClick={createNewSession} className="flex items-center gap-3 w-full p-4 bg-white/5 border border-white/10 text-white font-bold rounded-2xl transition-all hover:bg-white/10 mb-8 active:scale-95"><Plus className="w-5 h-5 text-orange-500" /><span className="text-xs hidden md:block uppercase font-black tracking-widest">New Mission</span></button>
         <div className="flex-1 overflow-y-auto space-y-2 px-1 custom-scrollbar">
+          <a href="/skills" className="block px-4 py-3 mb-2 border-b border-white/5 hover:bg-white/5 rounded-xl transition-colors">
+            <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider">技能</p>
+            <p className="text-sm font-semibold text-orange-500/80 mt-0.5">{skillsCount} 个</p>
+          </a>
           {sessions.map((s) => (
             <div key={s.id} onClick={() => switchSession(s.id)} className={`flex items-center gap-3 px-4 py-4 rounded-2xl cursor-pointer transition-all border ${sessionId === s.id ? "bg-white/5 text-orange-500 border-orange-500/20" : "bg-transparent text-white/20 border-transparent hover:bg-white/5"}`}><MessageSquare className="w-4 h-4 shrink-0" /><span className="text-sm font-semibold truncate hidden md:block">{s.title}</span></div>
           ))}
@@ -220,6 +234,7 @@ export default function BaogePage() {
         <header className="h-16 flex items-center justify-between px-10 border-b border-white/5 backdrop-blur-xl z-10 bg-black/40">
           <div className="flex items-center gap-3"><div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)] animate-pulse" /><span className="text-[9px] font-bold text-white/30 tracking-[0.4em] uppercase font-mono">Terminal Online</span></div>
           <div className="flex items-center gap-4">
+            <a href="/skills" className="text-[10px] text-white/30 hover:text-orange-500 transition-colors font-mono uppercase tracking-wider">技能</a>
             <a href="/changelog" className="text-[10px] text-white/30 hover:text-orange-500 transition-colors font-mono uppercase tracking-wider">更新日志</a>
             <a href="/debug" className="text-[10px] text-white/30 hover:text-orange-500 transition-colors font-mono uppercase tracking-wider">运行监控</a>
           </div>

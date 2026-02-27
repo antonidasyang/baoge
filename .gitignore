@@ -24,6 +24,7 @@ dev.log
 
 # TypeScript / Build logs
 dist/
+.dist-stage/
 build/
 *.tsbuildinfo
 npm-debug.log*
