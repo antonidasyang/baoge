@@ -1,5 +1,6 @@
 # Dependency directories
 node_modules/
+.pnpm-store/
 
 # Next.js build output
 .next/
@@ -14,6 +15,7 @@ out/
 
 # Baoge specific storage (Don't commit your personal data)
 .baoge_db/
+.pi-mon/
 dev.log
 
 # System files
