@@ -4,11 +4,11 @@ import path from 'path';
 
 export default {
   name: 'file_operations',
-  description: '管理本地文件',
+  description: 'Read, write, list, or delete local files. Use operation to specify action; path for file/dir path; content required for write.',
   parameters: z.object({
-    operation: z.enum(['read', 'write', 'list', 'delete']),
-    path: z.string(),
-    content: z.string().optional()
+    operation: z.enum(['read', 'write', 'list', 'delete']).describe('Action: read file, write file, list directory, or delete file'),
+    path: z.string().describe('File or directory path (relative to cwd or absolute)'),
+    content: z.string().optional().describe('Required for write: content to write')
   }),
   execute: async (params: { operation: string; path: string; content?: string }) => {
     const targetPath = path.resolve(process.cwd(), params.path);

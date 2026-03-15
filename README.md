@@ -27,17 +27,41 @@ pnpm add -g .
 
 ## 配置
 
-在 `~/.baoge/config.json` 中配置 LLM：
+在配置目录下创建 `config.json`：
+- 开发模式（`pnpm dev`）：`~/.baoge-dev/config.json`
+- 生产模式（`pnpm start` / `baoge start`）：`~/.baoge/config.json`
 
 ```json
 {
-  "llmApiKey": "your-api-key",
-  "llmModel": "gpt-4o-mini",
-  "llmBaseUrl": "https://api.openai.com/v1"
+  "providers": {
+    "provider_1": {
+      "type": "openai",
+      "apiKey": "your-api-key",
+      "baseUrl": "https://api.openai.com/v1",
+      "models": [
+        { "name": "gpt-4o-mini" },
+        { "name": "text-embedding-3-small" },
+        { "name": "gpt-4o" },
+        { "name": "qwen3-coder" }
+      ]
+    }
+  },
+  "models": {
+    "chat": "provider_1/gpt-4o-mini",
+    "embedding": "provider_1/text-embedding-3-small",
+    "vision": "provider_1/gpt-4o",
+    "coding": "provider_1/qwen3-coder"
+  }
 }
 ```
 
-可选：`llmEmbeddingModel`、`llmEmbeddingBaseUrl` 用于向量检索。
+- **providers**：可配置多个 provider，每个含 apiKey、baseUrl、可选 type、可选 models 数组
+- **provider.models**：该 provider 下的 model 列表。支持 name、contextWindow、maxTokens、temperature、topP、topK、presencePenalty、frequencyPenalty；请求时仅传入已配置的项
+- **models**：各任务选用的 model，格式为 `provider_name/model_name`
+
+简化写法：`models.chat: "gpt-4o-mini"` 表示用 default provider 的 gpt-4o-mini。
+
+providers 也支持数组格式：`"providers": [{ "name": "provider_1", "type": "openai", ... }]`
 
 ## 使用
 
@@ -52,14 +76,15 @@ pnpm add -g .
 
 ## 技能
 
-技能扩展豹哥的能力，支持从 Git 或本地路径安装：
+技能扩展豹哥的能力，支持从 Git 或本地路径安装。兼容 [SKILL.md 标准](https://agentskills.io/)（agentskills.io）：
 
 ```bash
 baoge skill add https://github.com/xxx/baoge-skill-weather
-baoge skill add ./my-local-skill
+baoge skill add ~/skills/docx
 ```
 
-技能需包含 `index.ts`，并导出符合 pi-agent 规范的 tool 对象。
+- **SKILL.md**：指令型技能，目录包含 `SKILL.md`（YAML frontmatter + Markdown 说明）即可
+- **index.ts**：工具型技能，导出 pi-agent 规范的 tool 对象
 
 ## 开发
 

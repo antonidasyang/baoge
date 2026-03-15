@@ -19,9 +19,9 @@ function isSimilar(cmd: string): boolean {
 
 export default {
   name: 'run_command',
-  description: '执行本地终端命令',
+  description: 'Execute a shell command on the local machine. Use param command for the exact command string.',
   parameters: z.object({
-    command: z.string().describe('shell 命令')
+    command: z.string().describe('Shell command to run')
   }),
   execute: async (params: { command: string }) => {
     const cmd = params.command;

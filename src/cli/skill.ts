@@ -14,7 +14,7 @@ async function main() {
       console.log(chalk.dim('\n使用 baoge skill add <git-url|本地路径> 安装技能'));
       return;
     }
-    skills.forEach((s, i) => console.log(`  ${i + 1}. ${chalk.orange(s.name)}`));
+    skills.forEach((s, i) => console.log(`  ${i + 1}. ${chalk.hex('#FFA500')(s.name)}`));
     console.log(chalk.dim(`\n共 ${skills.length} 个技能`));
     return;
   }

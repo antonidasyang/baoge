@@ -3,10 +3,10 @@ import { saveToMemory, searchMemory } from '../memory';
 
 export default {
   name: 'manage_memory',
-  description: '记忆管理',
+  description: 'Save text to long-term memory or search memories by semantic similarity. Use action save to store, search to retrieve.',
   parameters: z.object({
-    action: z.enum(['save', 'search']),
-    text: z.string()
+    action: z.enum(['save', 'search']).describe('save: store text; search: find similar memories'),
+    text: z.string().describe('Text to save or search query')
   }),
   execute: async (params: { action: string; text: string }) => {
     if (params.action === 'save') {

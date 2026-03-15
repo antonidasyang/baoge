@@ -8,6 +8,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer"; // 引入 Mark
 interface Message {
   role: "user" | "assistant";
   content: string;
+  toolsUsed?: string[];
 }
 
 interface Session {
@@ -31,6 +32,7 @@ export default function BaogePage() {
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [skillsCount, setSkillsCount] = useState(0);
+  const [loadedSkills, setLoadedSkills] = useState<string[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -94,7 +96,7 @@ export default function BaogePage() {
     });
   };
 
-  const handleUpload = async (fileList: FileWithPath[]) => {
+  const handleUpload = async (fileList: FileWithPath[]): Promise<{ path: string; name: string }[]> => {
     setUploading(true);
     const formData = new FormData();
     fileList.forEach(item => { formData.append('files', item.file); formData.append('paths', item.path); });
@@ -104,22 +106,31 @@ export default function BaogePage() {
       if (data.success) {
         const fileNames = fileList.map(f => f.file.name).join(', ');
         setMessages(prev => [...prev, { role: "assistant", content: `✅ [系统登记] 成功挂载资产: ${fileNames}` }]);
+        return (data.assets || []).map((a: { path: string; name: string }) => ({ path: a.path, name: a.name }));
       }
     } catch (e) { alert("上传失败"); } finally { setUploading(false); setAttachedFiles([]); }
+    return [];
   };
 
   const handleSend = async () => {
     if (!input.trim() && attachedFiles.length === 0) return;
     if (isLoading) return;
-    if (attachedFiles.length > 0) await handleUpload(attachedFiles);
+    let uploadedAssets: { path: string; name: string }[] = [];
+    if (attachedFiles.length > 0) uploadedAssets = await handleUpload(attachedFiles);
     if (!input.trim()) return;
-    const currentInput = input;
+    const displayInput = input;
+    let apiPrompt = input;
+    if (uploadedAssets.length > 0) {
+      const assetHint = uploadedAssets.map(a => `${a.name}: ${a.path}`).join('\n');
+      apiPrompt = `${input}\n\n[当前会话刚上传的资产，可直接使用以下路径]\n${assetHint}`;
+    }
     setInput("");
     setIsLoading(true);
     let toolStatus = "";
     let mainContent = "";
+    const toolsUsedThisTurn: string[] = [];
     const getFullContent = () => (toolStatus ? toolStatus + (mainContent ? "\n\n" + mainContent : "") : mainContent) || "";
-    setMessages(prev => [...prev, { role: "user", content: currentInput }, { role: "assistant", content: "" }]);
+    setMessages(prev => [...prev, { role: "user", content: displayInput }, { role: "assistant", content: "" }]);
     const streamMsgIdx = messages.length + 1;
     const updateMsg = (content: string) => setMessages(prev => { const n = [...prev]; n[streamMsgIdx] = { role: "assistant", content }; return n; });
     const ac = new AbortController();
@@ -128,7 +139,7 @@ export default function BaogePage() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: currentInput, sessionId, requestId: rid }),
+        body: JSON.stringify({ prompt: apiPrompt, sessionId, requestId: rid }),
         headers: { "Content-Type": "application/json" },
         signal: ac.signal
       });
@@ -146,7 +157,11 @@ export default function BaogePage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const ev = JSON.parse(line.slice(6));
-            if (ev.type === "tool_start") {
+            if (ev.type === "skills_loaded") {
+              const all = [...(ev.skillMd || []), ...(ev.tools || [])];
+              if (all.length > 0) setLoadedSkills(all);
+            } else if (ev.type === "tool_start") {
+              toolsUsedThisTurn.push(ev.toolName);
               let argStr = "";
               if (ev.args && typeof ev.args === "object") {
                 const a = ev.args;
@@ -176,6 +191,16 @@ export default function BaogePage() {
       if (!aborted) updateMsg(getFullContent() || "⚠️ 豹哥内核连接异常。");
       else if (!getFullContent().trim()) updateMsg("⚠️ 已停止。");
     } finally {
+      if (toolsUsedThisTurn.length > 0) {
+        setMessages(prev => {
+          const n = [...prev];
+          const idx = n.length - 1;
+          if (n[idx]?.role === "assistant") {
+            n[idx] = { ...n[idx], toolsUsed: toolsUsedThisTurn };
+          }
+          return n;
+        });
+      }
       abortRef.current = null;
       setIsLoading(false);
     }
@@ -201,8 +226,8 @@ export default function BaogePage() {
         e.preventDefault();
         setIsDragging(false);
         const items = Array.from(e.dataTransfer.items);
-        if (items && items[0]?.webkitGetAsEntry) {
-          const results = await Promise.all(items.map(item => traverseFileTree(item.webkitGetAsEntry())));
+        if (items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+          const results = await Promise.all(items.map(item => traverseFileTree(item.webkitGetAsEntry!())));
           setAttachedFiles(prev => [...prev, ...results.flat()]);
         } else {
           const files = Array.from(e.dataTransfer.files).map(f => ({ file: f, path: f.name }));
@@ -220,9 +245,10 @@ export default function BaogePage() {
         <div className="flex items-center gap-3 px-2 mb-8 mt-2 cursor-pointer" onClick={() => refreshSessions()}><div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20"><LeopardLogo className="w-7 h-7 text-white" /></div><div className="hidden md:block italic tracking-tighter"><h1 className="font-black text-xl leading-tight">BAOGE</h1><p className="text-[9px] text-white/30 font-mono tracking-widest uppercase">Stealth Mode On</p></div></div>
         <button onClick={createNewSession} className="flex items-center gap-3 w-full p-4 bg-white/5 border border-white/10 text-white font-bold rounded-2xl transition-all hover:bg-white/10 mb-8 active:scale-95"><Plus className="w-5 h-5 text-orange-500" /><span className="text-xs hidden md:block uppercase font-black tracking-widest">New Mission</span></button>
         <div className="flex-1 overflow-y-auto space-y-2 px-1 custom-scrollbar">
-          <a href="/skills" className="block px-4 py-3 mb-2 border-b border-white/5 hover:bg-white/5 rounded-xl transition-colors">
+          <a href="/skills" className="block px-4 py-3 mb-2 border-b border-white/5 hover:bg-white/5 rounded-xl transition-colors" title={loadedSkills.length > 0 ? `已加载: ${loadedSkills.join(', ')}` : undefined}>
             <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider">技能</p>
             <p className="text-sm font-semibold text-orange-500/80 mt-0.5">{skillsCount} 个</p>
+            {loadedSkills.length > 0 && <p className="text-[10px] text-white/30 mt-1 truncate">{loadedSkills.join(', ')}</p>}
           </a>
           {sessions.map((s) => (
             <div key={s.id} onClick={() => switchSession(s.id)} className={`flex items-center gap-3 px-4 py-4 rounded-2xl cursor-pointer transition-all border ${sessionId === s.id ? "bg-white/5 text-orange-500 border-orange-500/20" : "bg-transparent text-white/20 border-transparent hover:bg-white/5"}`}><MessageSquare className="w-4 h-4 shrink-0" /><span className="text-sm font-semibold truncate hidden md:block">{s.title}</span></div>
@@ -242,16 +268,27 @@ export default function BaogePage() {
 
         <div className="flex-1 overflow-y-auto px-4 custom-scrollbar">
           <div className="max-w-3xl mx-auto py-16 space-y-12 pb-48">
-            {messages.map((m, i) => (
+            {messages.map((m, i) => (m.role === "assistant" && !m.content?.trim()) ? null :
               <div key={i} className={`flex gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700 ${m.role === "user" ? "justify-end" : ""}`}>
                 {m.role === "assistant" && <div className="w-12 h-12 rounded-2xl bg-orange-500/5 border border-orange-500/10 flex items-center justify-center shrink-0 shadow-2xl"><LeopardLogo className="w-7 h-7 text-orange-500" /></div>}
                 <div className={`p-7 rounded-[2.5rem] max-w-[85%] border shadow-2xl transition-all duration-500 ${m.role === "user" ? "bg-orange-500 text-black font-medium border-orange-600 rounded-tr-sm" : "bg-white/[0.02] text-white/80 border-white/5 rounded-tl-sm shadow-black"}`}>
-                  {/* 使用 MarkdownRenderer 渲染内容 */}
-                  <MarkdownRenderer content={m.content} />
+                  {m.role === "assistant" && m.toolsUsed && m.toolsUsed.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3 pb-3 border-b border-white/10">
+                      <span className="text-[10px] text-white/40 font-mono uppercase tracking-wider">本次调用</span>
+                      {m.toolsUsed.map((t, j) => (
+                        <span key={j} className="px-2 py-0.5 rounded-md bg-orange-500/20 text-orange-500 text-xs font-mono">{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  {m.role === "user" ? (
+                    <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                  ) : (
+                    <MarkdownRenderer content={m.content} />
+                  )}
                 </div>
                 {m.role === "user" && <div className="w-12 h-12 rounded-2xl bg-[#111] border border-white/10 flex items-center justify-center shrink-0 shadow-2xl"><User className="w-6 h-6 text-white/40" /></div>}
               </div>
-            ))}
+            )}
             {uploading && (
               <div className="flex gap-6 animate-pulse">
                 <div className="w-12 h-12 rounded-2xl bg-orange-500/5 border border-orange-500/10 flex items-center justify-center"><Loader2 className="w-6 h-6 text-orange-500 animate-spin" /></div>
@@ -281,15 +318,17 @@ export default function BaogePage() {
                 ))}
               </div>
             )}
-            <div className="relative flex items-center">
-              <button onClick={() => fileInputRef.current?.click()} className="absolute left-4 p-2 text-white/20 hover:text-orange-500 transition-colors"><Paperclip className="w-6 h-6" /></button>
+            <div className="flex items-stretch gap-3">
+              <textarea className="input-scrollbar flex-1 px-5 py-4 h-24 overflow-y-auto resize-none bg-[#111]/80 backdrop-blur-2xl border-2 border-orange-500/25 focus:border-orange-500/50 rounded-2xl outline-none transition-all text-white shadow-2xl placeholder:text-white/10 text-[15px] leading-relaxed align-top" placeholder="请输入指令... (Shift+Enter 换行)" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!isLoading) handleSend(); } }} rows={2} />
               <input type="file" ref={fileInputRef} multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []).map(f => ({ file: f, path: f.webkitRelativePath || f.name })); setAttachedFiles(prev => [...prev, ...files]); }} />
-              <input className="w-full pl-14 pr-24 py-7 bg-[#111]/80 backdrop-blur-2xl border border-white/10 focus:border-orange-500/40 rounded-[2.5rem] outline-none transition-all text-white shadow-2xl placeholder:text-white/10 text-[16px]" placeholder="请输入指令或拖入文件夹..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSend()} />
-              {isLoading && !uploading ? (
-                <button onClick={handleStop} className="absolute right-3 top-3 bottom-3 w-16 bg-red-500/90 text-white rounded-full hover:bg-red-500 active:scale-90 transition-all flex items-center justify-center shadow-lg shadow-red-500/20" title="停止"><Square className="w-6 h-6 fill-current" /></button>
-              ) : (
-                <button onClick={handleSend} disabled={isLoading || uploading} className="absolute right-3 top-3 bottom-3 w-16 bg-orange-500 text-black rounded-full hover:bg-orange-400 active:scale-90 transition-all flex items-center justify-center shadow-lg shadow-orange-500/20 disabled:opacity-20"><Send className="w-7 h-7" /></button>
-              )}
+              <div className="flex flex-col gap-2 shrink-0">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 text-orange-500 hover:bg-orange-500/20 hover:border-orange-500/30 flex items-center justify-center transition-colors" title="添加附件"><Paperclip className="w-5 h-5" /></button>
+                {isLoading && !uploading ? (
+                  <button type="button" onClick={handleStop} className="w-11 h-11 bg-red-500/90 text-white rounded-xl hover:bg-red-500 active:scale-95 transition-all flex items-center justify-center" title="停止"><Square className="w-5 h-5 fill-current" /></button>
+                ) : (
+                  <button type="button" onClick={handleSend} disabled={isLoading || uploading} className="w-11 h-11 bg-orange-500 text-black rounded-xl hover:bg-orange-400 active:scale-95 transition-all flex items-center justify-center disabled:opacity-40" title="发送（Enter）"><Send className="w-5 h-5" /></button>
+                )}
+              </div>
             </div>
           </div>
         </footer>

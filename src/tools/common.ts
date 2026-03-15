@@ -3,9 +3,9 @@ import { z } from 'zod';
 export const timeSkill = {
   metadata: {
     id: 'get_time',
-    name: '系统时钟',
+    name: 'System clock',
     version: '1.0.0',
-    description: '查询当前的日期和时间',
+    description: 'Get current date and time',
     category: 'system',
     icon: 'Clock'
   },

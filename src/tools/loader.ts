@@ -13,7 +13,7 @@ export async function loadTools() {
   // 1. 加载单文件工具 (内置)
   if (fs.existsSync(toolsDir)) {
     const toolFiles = fs.readdirSync(toolsDir).filter(f => 
-      f.endsWith('.ts') && !['loader.ts', 'core.ts'].includes(f)
+      f.endsWith('.ts') && f !== 'loader.ts'
     );
     for (const file of toolFiles) {
       // 内置工具还在 src 下，可以用相对导入

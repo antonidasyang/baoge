@@ -9,3 +9,25 @@ body {
   color: var(--foreground);
   background: var(--background);
 }
+
+/* 输入框滚动条样式 */
+.input-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(249,115,22,0.35) transparent;
+}
+.input-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.input-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.input-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(249,115,22,0.25);
+  border-radius: 10px;
+}
+.input-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(249,115,22,0.45);
+}
+.input-scrollbar::-webkit-scrollbar-button {
+  display: none;
+}

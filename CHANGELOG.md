@@ -5,6 +5,27 @@ All notable changes to 豹哥 (Baoge) will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [1.3.0] - 2026-03-15
+
+### Added
+
+- **运行日志系统**：自动写入 `~/.baoge/logs/` 或 `~/.baoge-dev/logs/`，按日期分文件，记录 HTTP 请求/响应、工具调用、模型回复等完整运行过程
+- **控制台调试模式**：设置 `BAOGE_DEBUG=1` 可在终端实时查看彩色日志输出
+- **HTTP 拦截器**：全局 fetch 拦截，记录请求 URL、状态码、耗时、错误响应体
+- **视觉模型工具** (`use_vision`)：支持图片分析，base64 编码发送，120 秒超时，504 网关超时友好提示
+- **编程模型工具** (`use_coding_model`)：独立调用编程专用模型，支持 `task` 和 `prompt` 双参数名兼容
+- **文本嵌入工具** (`use_embedding`)：计算文本嵌入向量，支持余弦相似度比较
+
+### Changed
+
+- **Agent 内核重构**：独立 `src/agent/index.ts`，从 route 中解耦，删除 `src/tools/core.ts`
+- **多 Provider 配置**：支持为 chat/vision/coding/embedding 分别配置不同的 provider 和模型
+- **模型参数从配置读取**：`maxTokens`、`contextWindow` 等参数从 `config.json` 的 model 定义中读取，不再硬编码
+- **UI 优化**：等待模型回复时隐藏空气泡，仅显示加载动画
+- **工具加载器重构**：统一工具注册机制
+
+---
+
 ## [1.2.0] - 2025-02-26
 
 ### Added

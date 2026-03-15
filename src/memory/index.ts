@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import OpenAI from 'openai';
-import { config } from '../config';
+import { getProviderFor, getModelFor } from '../config';
 import crypto from 'crypto';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -20,10 +20,8 @@ if (!fs.existsSync(UPLOAD_ROOT)) fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
 let embedClientInstance: OpenAI | null = null;
 function getEmbedClient() {
   if (!embedClientInstance) {
-    embedClientInstance = new OpenAI({
-      apiKey: config.llmApiKey,
-      baseURL: config.llmEmbeddingBaseUrl || config.llmBaseUrl
-    });
+    const p = getProviderFor('embedding');
+    embedClientInstance = new OpenAI({ apiKey: p.apiKey, baseURL: p.baseUrl });
   }
   return embedClientInstance;
 }
@@ -52,22 +50,34 @@ export async function registerAsset(file: Buffer, originalName: string, relative
   return assetInfo;
 }
 
-export async function embed(text: string) {
-  const model = config.llmEmbeddingModel || 'text-embedding-v3';
+export async function embed(text: string): Promise<number[] | null> {
+  const p = getProviderFor('embedding');
+  if (!p.apiKey) {
+    console.warn('⚠️ [Embedding] 未配置 provider.apiKey，请在 ~/.baoge/config.json 的 provider 中设置');
+    return null;
+  }
+  if (!p.baseUrl) {
+    console.warn('⚠️ [Embedding] 未配置 provider.baseUrl');
+    return null;
+  }
+  const model = getModelFor('embedding');
   try {
     const client = getEmbedClient();
     const response = await client.embeddings.create({ model, input: text, encoding_format: "float" });
     return response.data[0].embedding;
   } catch (err: any) {
-    console.warn(`⚠️ [Embedding] API Error: ${err.message}`);
+    console.warn(`⚠️ [Embedding] ${err.message}`);
     return null;
   }
 }
 
-export async function getSessions() {
+export async function getSessions(): Promise<{ id: string; title: string; updatedAt: number }[]> {
   const HISTORY_FILE = path.join(STORAGE_ROOT, 'history.json');
   if (!fs.existsSync(HISTORY_FILE)) return [];
-  try { return Object.values(JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'))).sort((a: any, b: any) => b.updatedAt - a.updatedAt); } catch { return []; }
+  try {
+    const data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')) as Record<string, { id: string; title: string; updatedAt: number }>;
+    return Object.values(data).sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch { return []; }
 }
 
 export async function upsertSession(id: string, title: string) {
@@ -88,7 +98,7 @@ export async function saveMessage(sessionId: string, role: string, content: stri
   fs.writeFileSync(filePath, JSON.stringify(history, null, 2));
 }
 
-export async function getChatHistory(sessionId: string) {
+export async function getChatHistory(sessionId: string): Promise<{ role: string; content: string }[]> {
   const filePath = path.join(STORAGE_ROOT, 'contents', `${sessionId}.json`);
   if (!fs.existsSync(filePath)) return [];
   try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return []; }
@@ -116,7 +126,7 @@ export async function saveToMemory(text: string, metadata: any = {}) {
 /**
  * 核心修复：找回丢失的 searchMemory 导出
  */
-export async function searchMemory(query: string, limit: number = 3) {
+export async function searchMemory(query: string, limit: number = 3): Promise<{ text: string }[]> {
   try {
     const vector = await embed(query);
     if (!vector) return [];

@@ -1,4 +1,4 @@
-import { runBaoge } from '@/tools/core';
+import { runBaoge } from '@/agent';
 import { pushDebugEvent } from '@/lib/debug-store';
 import { saveMessage, saveToMemory } from '@/memory/index';
 import { registerAbort, removeAbort } from '@/lib/abort-store';
@@ -29,7 +29,9 @@ export async function POST(req: Request) {
         streamEvent(controller, { type: 'request_id', requestId: rid });
         await runBaoge(prompt, sessionId, (event) => {
           pushDebugEvent(event.type, sessionId, event);
-          if (event.type === 'tool_execution_start') {
+          if (event.type === 'skills_loaded') {
+            streamEvent(controller, { type: 'skills_loaded', skillMd: event.skillMd, tools: event.tools });
+          } else if (event.type === 'tool_execution_start') {
             streamEvent(controller, {
               type: 'tool_start',
               toolName: event.toolName,

@@ -1,9 +1,10 @@
 import { Agent } from '@mariozechner/pi-agent-core';
 import { getModel } from '@mariozechner/pi-ai';
 import { TUI, ProcessTerminal, Container, Text, Input, Spacer, matchesKey, Key } from '@mariozechner/pi-tui';
-import { config } from '../config/index';
+import { getProviderFor, getModelFor } from '../config/index';
 import { loadTools } from '../tools/loader';
 import { getSessions, getChatHistory, saveMessage, upsertSession, saveToMemory } from '../memory/index';
+import { getSkillsContext, getSkillMdNames } from '../lib/skills';
 import chalk from 'chalk';
 
 /**
@@ -50,16 +51,20 @@ async function startTui() {
   try {
     const model = getModel('openai', 'gpt-4o-mini' as any);
     if (!model) return;
-    model.api = 'openai-completions' as any;
-    model.id = config.llmModel;
-    model.baseUrl = config.llmBaseUrl;
+    const provider = getProviderFor('chat');
+    Object.assign(model, { api: 'openai-completions', id: getModelFor('chat'), baseUrl: provider.baseUrl });
 
-    const agent = new Agent({ getApiKey: () => config.llmApiKey });
+    const agent = new Agent({ getApiKey: () => provider.apiKey });
     agent.setModel(model);
-    agent.setSystemPrompt('你是一个助手，叫"豹哥"。');
+    const basePrompt = '你是一个助手，叫"豹哥"。';
+    const skillsCtx = getSkillsContext();
+    agent.setSystemPrompt(basePrompt + (skillsCtx ? skillsCtx : ''));
 
     const tools = await loadTools();
     agent.setTools(tools);
+
+    const skillMd = getSkillMdNames();
+    const toolNames = tools.map((t: { name: string }) => t.name);
 
     let sessionId: string;
     let sessionTitle: string;
@@ -76,8 +81,8 @@ async function startTui() {
     const terminal = new ProcessTerminal();
     const tui = new TUI(terminal);
 
-    // 1. 调整后的布局常量
-    const HEADER_HEIGHT = 3; // 标题 + 会话 + 细线
+    const skillInfo = [skillMd, toolNames].filter(a => a.length > 0).flat();
+    const HEADER_HEIGHT = skillInfo.length > 0 ? 4 : 3; // 标题 + 会话 + [技能] + 细线
     const FOOTER_HEIGHT = 3; // 上线 + 输入行 + 下线
 
     // 2. 初始化
@@ -90,6 +95,9 @@ async function startTui() {
     root.addChild(new Text(chalk.cyan.bold(' ✦ BAOGE TERMINAL '), 2, 0));
     const sessionHeader = new Text(chalk.dim(` 会话: ${sessionTitle}`), 0, 0);
     root.addChild(sessionHeader);
+    if (skillInfo.length > 0) {
+      root.addChild(new Text(chalk.dim(` 技能: ${skillInfo.join(', ')}`), 0, 0));
+    }
     const headerDivider = new Text(headerLine(), 0, 0);
     root.addChild(headerDivider);
     
