@@ -161,15 +161,17 @@ export default function BaogePage() {
               const all = [...(ev.skillMd || []), ...(ev.tools || [])];
               if (all.length > 0) setLoadedSkills(all);
             } else if (ev.type === "tool_start") {
-              toolsUsedThisTurn.push(ev.toolName);
+              const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
+              toolsUsedThisTurn.push(`${agentLabel}${ev.toolName}`);
               let argStr = "";
               if (ev.args && typeof ev.args === "object") {
                 const a = ev.args;
                 argStr = a.command ?? (a.operation && a.path ? `${a.operation} ${a.path}` : a.path) ?? JSON.stringify(a).slice(0, 60);
               } else if (ev.args) argStr = String(ev.args).slice(0, 60);
-              toolStatus += `⚡ **正在执行:** \`${ev.toolName}\`${argStr ? ` \`${String(argStr).slice(0, 80)}${String(argStr).length > 80 ? "…" : ""}\`` : ""}\n\n`;
+              toolStatus += `⚡ **${agentLabel}正在执行:** \`${ev.toolName}\`${argStr ? ` \`${String(argStr).slice(0, 80)}${String(argStr).length > 80 ? "…" : ""}\`` : ""}\n\n`;
             } else if (ev.type === "tool_end") {
-              toolStatus += `✅ \`${ev.toolName}\` 已完成\n\n`;
+              const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
+              toolStatus += `✅ **${agentLabel}**\`${ev.toolName}\` 已完成\n\n`;
             } else if (ev.type === "text_delta" && ev.delta) {
               mainContent += ev.delta;
             } else if (ev.type === "message_end" && ev.text) {

@@ -29,11 +29,13 @@ export async function POST(req: Request) {
         streamEvent(controller, { type: 'request_id', requestId: rid });
         await runBaoge(prompt, sessionId, (event) => {
           pushDebugEvent(event.type, sessionId, event);
+          const agentName = event.agentName || 'main';
           if (event.type === 'skills_loaded') {
             streamEvent(controller, { type: 'skills_loaded', skillMd: event.skillMd, tools: event.tools });
           } else if (event.type === 'tool_execution_start') {
             streamEvent(controller, {
               type: 'tool_start',
+              agentName,
               toolName: event.toolName,
               args: event.args,
             });
@@ -43,12 +45,14 @@ export async function POST(req: Request) {
             if (text == null) text = typeof result === 'string' ? result : JSON.stringify(result ?? {});
             streamEvent(controller, {
               type: 'tool_end',
+              agentName,
               toolName: event.toolName,
               result: String(text).slice(0, 500),
             });
           } else if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') {
             streamEvent(controller, {
               type: 'text_delta',
+              agentName,
               delta: event.assistantMessageEvent.delta,
             });
           } else if (event.type === 'message_end' && event.message?.role === 'assistant') {

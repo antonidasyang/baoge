@@ -45,6 +45,23 @@ export async function loadTools() {
   return tools;
 }
 
+export async function loadSkillTools(skillName: string) {
+  const tools: any[] = [];
+  const skillsDir = getSkillsDir();
+  const skillPath = path.join(skillsDir, skillName);
+  const indexPath = path.join(skillPath, 'index.ts');
+
+  if (fs.existsSync(indexPath)) {
+    try {
+      const module = await import(pathToFileURL(indexPath).href);
+      registerExports(module, tools);
+    } catch (err: any) {
+      console.warn(`⚠️ [豹哥提示] 技能 ${skillName} 工具加载失败: ${err.message}`);
+    }
+  }
+  return tools;
+}
+
 function registerExports(module: any, tools: any[]) {
   const allExports = { ...module };
   for (const key in allExports) {

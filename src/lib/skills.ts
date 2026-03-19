@@ -137,3 +137,19 @@ export function removeSkill(name: string): boolean {
   fs.rmSync(target, { recursive: true });
   return true;
 }
+
+/** 获取单个技能的数据（SKILL.md 内容和 index.ts 路径） */
+export function getSkillData(name: string) {
+  const dir = getSkillsDir();
+  const skillPath = path.join(dir, name);
+  if (!fs.existsSync(skillPath)) return null;
+
+  const skillMdPath = path.join(skillPath, 'SKILL.md');
+  const indexTsPath = path.join(skillPath, 'index.ts');
+
+  return {
+    name,
+    skillMd: fs.existsSync(skillMdPath) ? fs.readFileSync(skillMdPath, 'utf8') : null,
+    indexTsPath: fs.existsSync(indexTsPath) ? indexTsPath : null,
+  };
+}
