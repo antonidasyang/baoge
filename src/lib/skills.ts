@@ -52,7 +52,6 @@ export async function installSkill(source: string): Promise<{ name: string }> {
   const dir = getSkillsDir();
   const resolved = source.trim();
   let skillName: string;
-  let tempPath: string | null = null;
 
   try {
     if (isGitUrl(resolved)) {
@@ -85,11 +84,18 @@ export async function installSkill(source: string): Promise<{ name: string }> {
     }
     return { name: skillName };
   } catch (err: any) {
-    if (tempPath && fs.existsSync(tempPath)) {
-      fs.rmSync(tempPath, { recursive: true });
-    }
     throw err;
   }
+}
+
+/** 解析 SKILL.md frontmatter 中的 description 字段（用于在系统提示中向主智能体说明每个子智能体的能力） */
+export function getSkillDescription(name: string): string {
+  const data = getSkillData(name);
+  if (!data?.skillMd) return '';
+  const m = data.skillMd.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!m) return '';
+  const desc = m[1].match(/^description:\s*(.+)$/m);
+  return desc ? desc[1].trim().replace(/^["']|["']$/g, '') : '';
 }
 
 /** 返回已加载的 SKILL.md 技能名列表 */

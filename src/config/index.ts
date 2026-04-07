@@ -193,9 +193,15 @@ function loadConfig(): BaogeConfig {
   }
 }
 
-const _config = loadConfig();
+let _config = loadConfig();
 
 export const config = _config;
+
+/** 重新从磁盘加载配置（写入新 config.json 后调用） */
+export function reloadConfig(): BaogeConfig {
+  _config = loadConfig();
+  return _config;
+}
 
 export function getProviderFor(task: Task): ProviderCreds {
   const spec = _config.models[task] || DEFAULT_MODELS[task];
@@ -253,3 +259,11 @@ export function getChatCompletionExtra(task: Task): Record<string, number> {
 }
 
 export const ENV = isDev ? 'DEV' : 'PROD';
+
+/** 配置文件绝对路径（依据 NODE_ENV 区分 dev/prod 目录） */
+export const CONFIG_FILE_PATH = CONFIG_PATH;
+
+/** 是否已配置至少一个可用的 provider（含非空 apiKey） */
+export function isConfigured(): boolean {
+  return Object.values(_config.providers).some(p => p && p.apiKey && p.apiKey.trim().length > 0);
+}

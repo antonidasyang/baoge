@@ -3,7 +3,7 @@ import { getModel } from '@mariozechner/pi-ai';
 import { loadTools, loadSkillTools } from '../tools/loader';
 import { getChatHistory, saveMessage, upsertSession, saveToMemory } from '../memory';
 import { getProviderFor, getModelFor, getChatCompletionExtra, getModelParams } from '../config';
-import { getSkillsContext, getSkillMdNames, getSkillData, listSkills } from '../lib/skills';
+import { getSkillsContext, getSkillMdNames, getSkillData, listSkills, getSkillDescription } from '../lib/skills';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -68,6 +68,21 @@ globalThis.fetch = async function patchedFetch(input: any, init?: any) {
   }
 };
 
+/** 从 messages 中向后扫描，取最后一条 assistant 文本 */
+function extractLastAssistantText(messages: any[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role !== 'assistant') continue;
+    const c = m.content;
+    if (typeof c === 'string' && c.trim()) return c;
+    if (Array.isArray(c)) {
+      const t = c.find((p: any) => p.type === 'text' && p.text)?.text;
+      if (t) return t;
+    }
+  }
+  return undefined;
+}
+
 /**
  * 创建 Agent 实例的核心函数
  */
@@ -83,6 +98,8 @@ export async function createAgentInstance(options: {
   const extra = getChatCompletionExtra(task);
   const chatParams = getModelParams(task);
 
+  // 借用 pi-ai 的 model 形状，再覆写为真实 id/baseUrl。
+  // 注：未来若 pi-ai 冻结返回对象或在构造时校验 id，此处需改为直接构造。
   const model = getModel('openai', 'gpt-4o-mini' as any);
   if (!model) throw new Error('Model Load Error');
 
@@ -140,6 +157,11 @@ export async function runBaoge(
   signal?: AbortSignal
 ) {
   try {
+    const skillList = listSkills().map(s => {
+      const desc = getSkillDescription(s.name);
+      return desc ? `  - ${s.name}: ${desc}` : `  - ${s.name}`;
+    }).join('\n');
+
     const basePrompt = `你是一个助手，叫"豹哥"。
 
 【避免复读】
@@ -149,9 +171,10 @@ export async function runBaoge(
 
 【子智能体协作 (Subagents)】
 - 你可以将复杂的子任务委派给专门的子智能体处理。
-- 使用 \`delegate_task\` 工具，传入子智能体名称和具体任务。
-- 可用的子智能体包括：${listSkills().map(s => s.name).join(', ')}。
-- 只有当任务确实需要专门的技能（如邮件处理、特定代码库分析等）时，才使用委派。`;
+- 使用 \`delegate_task\` 工具，传入 agent_name、task，可选 task_type（chat|coding|vision，默认 chat）。
+- 可用的子智能体：
+${skillList || '  （无）'}
+- 只有当任务确实需要专门的技能时，才使用委派；不要嵌套委派。`;
 
     const skillsCtx = getSkillsContext();
     const systemPrompt = basePrompt + (skillsCtx ? skillsCtx : '');
@@ -165,10 +188,11 @@ export async function runBaoge(
       description: '将特定任务委派给专门的子智能体执行。',
       parameters: z.object({
         agent_name: z.string().describe('子智能体的名称（对应技能名）'),
-        task: z.string().describe('委派给子智能体的具体任务描述')
+        task: z.string().describe('委派给子智能体的具体任务描述'),
+        task_type: z.enum(['chat', 'coding', 'vision']).optional().describe('子智能体使用的模型类型，默认 chat')
       }),
-      execute: async (params: { agent_name: string; task: string }) => {
-        debugLog('DELEGATE', `正在委派给 ${params.agent_name}: ${params.task}`);
+      execute: async (params: { agent_name: string; task: string; task_type?: 'chat' | 'coding' | 'vision' }) => {
+        debugLog('DELEGATE', `正在委派给 ${params.agent_name} (${params.task_type ?? 'chat'}): ${params.task}`);
         const skillData = getSkillData(params.agent_name);
         if (!skillData) return `错误：找不到名为 ${params.agent_name} 的子智能体。`;
 
@@ -177,18 +201,33 @@ export async function runBaoge(
           name: params.agent_name,
           systemPrompt: skillData.skillMd || `你是一个专门负责 ${params.agent_name} 的子智能体。`,
           tools: subTools,
+          taskType: params.task_type ?? 'chat',
           onEvent: (ev) => onEvent({ ...ev, parentAgent: 'main' }),
         });
 
-        // 执行子任务
-        await subagent.prompt(params.task);
+        // 通知 UI 子智能体启动
+        onEvent({
+          type: 'subagent_start',
+          agentName: params.agent_name,
+          parentAgent: 'main',
+          tools: subTools.map((t: { name: string }) => t.name),
+        });
 
-        const lastMsg = subagent.state.messages[subagent.state.messages.length - 1];
-        const content = lastMsg?.content;
-        const text = Array.isArray(content)
-          ? content.find((c: any) => c.type === 'text')?.text
-          : typeof content === 'string' ? content : '子智能体未返回有效内容';
+        // 转发主流程的中止信号
+        const onAbort = () => subagent.abort();
+        if (signal) {
+          if (signal.aborted) subagent.abort();
+          else signal.addEventListener('abort', onAbort);
+        }
 
+        try {
+          await subagent.prompt(params.task);
+        } finally {
+          if (signal) signal.removeEventListener('abort', onAbort);
+          onEvent({ type: 'subagent_end', agentName: params.agent_name, parentAgent: 'main' });
+        }
+
+        const text = extractLastAssistantText(subagent.state.messages) ?? '子智能体未返回有效内容';
         return `子智能体 ${params.agent_name} 的执行结果：\n\n${text}`;
       }
     };
@@ -244,16 +283,10 @@ export async function runBaoge(
 
     await mainAgent.prompt(prompt);
 
-    const lastMessage = mainAgent.state.messages[mainAgent.state.messages.length - 1];
-    if (lastMessage && lastMessage.role === 'assistant') {
-      const content = lastMessage.content;
-      const text = Array.isArray(content)
-        ? content.find((c: any) => c.type === 'text')?.text
-        : typeof content === 'string' ? content : undefined;
-      if (text) {
-        await saveMessage(sessionId, 'assistant', text);
-        await saveToMemory(text, { source: 'chat', role: 'assistant', sessionId });
-      }
+    const text = extractLastAssistantText(mainAgent.state.messages);
+    if (text) {
+      await saveMessage(sessionId, 'assistant', text);
+      await saveToMemory(text, { source: 'chat', role: 'assistant', sessionId });
     }
 
     return mainAgent.state.messages;

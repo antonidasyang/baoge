@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { getSkillsDir } from '../lib/skills';
 
 export async function loadTools() {
   const tools: any[] = [];
-  const rootDir = process.cwd();
-  const toolsDir = path.join(rootDir, 'src', 'tools');
+  // 解析内置工具目录：相对于本文件，避免依赖 process.cwd()
+  const toolsDir = path.dirname(fileURLToPath(import.meta.url));
   const skillsDir = getSkillsDir();
 
   // 1. 加载单文件工具 (内置)

@@ -68,13 +68,18 @@ export default function DebugPage() {
     <main className="flex h-screen bg-[#0a0a0a] text-[#e0e0e0] font-mono overflow-hidden">
       <div className="flex-1 flex flex-col">
         <header className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/40">
-          <div className="flex items-center gap-3">
+          <a href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <LeopardLogo className="w-6 h-6 text-orange-500" />
             <span className="font-bold text-sm">豹哥 · 运行监控</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-white/20"}`} />
-            <span className="text-[10px] text-white/40">{connected ? "已连接" : "未连接"}</span>
+          </a>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-white/20"}`} />
+              <span className="text-[10px] text-white/40">{connected ? "已连接" : "未连接"}</span>
+            </div>
+            <a href="/" className="text-[10px] text-white/40 hover:text-orange-500 transition-colors font-mono uppercase tracking-wider">
+              返回
+            </a>
           </div>
         </header>
         <div className="flex-1 overflow-y-auto p-4 space-y-2 text-xs">

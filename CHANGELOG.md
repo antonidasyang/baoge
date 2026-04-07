@@ -5,6 +5,32 @@ All notable changes to 豹哥 (Baoge) will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/lang/zh-CN/).
 
+## [1.4.0] - 2026-04-07
+
+### Added
+
+- **配置向导**：首次启动或未配置时自动弹出表单，可填写 baseUrl / apiKey / 各任务模型，写入后免重启即时生效
+- **配置状态检测**：新增 `/api/config/status`、`/api/config/save`，顶部横幅提示未配置状态
+- **子智能体事件**：`subagent_start` / `subagent_end` 事件透传到 UI，便于追踪委派任务
+- **委派模型选择**：`delegate_task` 支持 `task_type` 参数，子智能体可指定 chat/coding/vision 模型
+- **委派中止透传**：父 AbortSignal 自动转发给子智能体
+- **调试页返回入口**：与 skills、changelog 一致的 "返回" 链接
+
+### Fixed
+
+- **内置工具加载路径**：改用 `import.meta.url` 解析，不再依赖 `process.cwd()`，从任意目录启动 baoge 都能加载内置工具
+- **末条助手消息提取**：向后扫描寻找最后一条 assistant 文本，修复以工具调用结尾时返回 "未返回有效内容" 的问题
+- **配置向导输入框失焦**：将 `Field` 子组件提到模块级，避免每次渲染重建组件类型导致 input 重挂载
+- **委派提示词**：列出每个子智能体的 description 而非仅名称，并禁止嵌套委派
+- **配置热重载**：新增 `reloadConfig()`，写入新 config.json 后无需重启
+- **删除 installSkill 死代码**：移除从未赋值的 `tempPath` 清理分支
+
+### Changed
+
+- **UI 圆角与内边距收紧**：消息气泡、按钮、输入框、模态框统一缩小圆角与 padding
+
+---
+
 ## [1.3.0] - 2026-03-15
 
 ### Added
