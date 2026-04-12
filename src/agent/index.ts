@@ -244,7 +244,7 @@ ${skillList || '  （无）'}
       name: delegateTool.name,
       label: delegateTool.label,
       description: delegateTool.description,
-      parameters: zodToJsonSchema(delegateTool.parameters),
+      parameters: zodToJsonSchema(delegateTool.parameters as any),
       execute: async (toolCallId: string, params: any) => {
         const result = await delegateTool.execute(params);
         return {

@@ -221,6 +221,7 @@ export function getModelFor(task: Task): string {
 export interface ChatParams {
   temperature?: number;
   maxTokens?: number;
+  contextWindow?: number;
   topP?: number;
   topK?: number;
   presencePenalty?: number;
@@ -237,6 +238,7 @@ export function getModelParams(task: Task): ChatParams | undefined {
   const out: ChatParams = {};
   if (modelDef.temperature != null) out.temperature = modelDef.temperature;
   if (modelDef.maxTokens != null) out.maxTokens = modelDef.maxTokens;
+  if (modelDef.contextWindow != null) out.contextWindow = modelDef.contextWindow;
   if (modelDef.topP != null) out.topP = modelDef.topP;
   if (modelDef.topK != null) out.topK = modelDef.topK;
   if (modelDef.presencePenalty != null) out.presencePenalty = modelDef.presencePenalty;
