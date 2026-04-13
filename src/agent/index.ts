@@ -196,8 +196,9 @@ export async function runBaoge(
 - 你的工作目录: ${workspaceDir}
 - 文件操作（读写、删除）限制在工作目录内。用户上传的文件在 ${uploadsDir}（只读）。
 - 所有 shell 命令的默认工作目录也是你的工作空间。
-- 当你生成了文件需要分享给用户时，使用 Markdown 链接格式: [文件名](/api/workspace/${sessionId}/文件名)
+- 当你生成了文件需要分享给用户时，先用 file_operations list 确认文件确实存在，再使用 Markdown 链接格式: [文件名](/api/workspace/${sessionId}/文件名)
 - 例如: [报表.xlsx](/api/workspace/${sessionId}/报表.xlsx)
+- 重要：链接中的文件名必须与工作空间中的实际文件名完全一致，不要猜测或编造文件名。
 
 【避免复读】
 - 不要重复执行相同或高度相似的命令。若某命令已执行过且结果不理想，应换一种思路或向用户说明情况。
@@ -232,9 +233,11 @@ ${skillList || '  （无）'}
         if (!skillData) return `错误：找不到名为 ${params.agent_name} 的子智能体。`;
 
         const subTools = await loadSkillTools(params.agent_name, { sessionId });
+        const subSkillPrompt = skillData.skillMd || `你是一个专门负责 ${params.agent_name} 的子智能体。`;
+        const subWorkspaceHint = `\n\n【工作空间】\n- 工作目录: ${workspaceDir}\n- 所有生成的文件必须保存到此目录。\n- shell 命令的默认 cwd 已设为此目录，直接使用相对路径即可。`;
         const subagent = await createAgentInstance({
           name: params.agent_name,
-          systemPrompt: skillData.skillMd || `你是一个专门负责 ${params.agent_name} 的子智能体。`,
+          systemPrompt: subSkillPrompt + subWorkspaceHint,
           tools: subTools,
           taskType: params.task_type ?? 'chat',
           onEvent: (ev) => onEvent({ ...ev, parentAgent: 'main' }),
