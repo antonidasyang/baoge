@@ -168,7 +168,7 @@ function loadConfig(): BaogeConfig {
           vision: taskModels.vision || DEFAULT_MODELS.vision,
           coding: taskModels.coding || DEFAULT_MODELS.coding,
         },
-        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds > 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
+        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds >= 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
       };
     }
 
@@ -187,7 +187,7 @@ function loadConfig(): BaogeConfig {
           vision: m.vision || DEFAULT_MODELS.vision,
           coding: m.coding || DEFAULT_MODELS.coding,
         },
-        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds > 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
+        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds >= 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
       };
     }
 

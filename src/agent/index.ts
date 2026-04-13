@@ -303,7 +303,7 @@ ${skillList || '  （无）'}
         // 每次工具执行完毕计为一轮
         if (event.type === 'tool_execution_end') {
           roundCount++;
-          if (roundCount >= maxRounds) {
+          if (maxRounds > 0 && roundCount >= maxRounds) {
             debugLog('GUARD', `已达最大轮次 ${maxRounds}，强制终止 agent 循环`);
             onEvent({ type: 'max_rounds_reached', maxRounds, roundCount });
             mainAgent.abort();
