@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessions, getChatHistory, upsertSession } from '@/memory/index';
+import { isRunning } from '@/lib/session-run-store';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -7,10 +8,11 @@ export async function GET(req: Request) {
 
   if (sessionId) {
     const history = await getChatHistory(sessionId);
-    return NextResponse.json({ history });
+    return NextResponse.json({ history, running: isRunning(sessionId) });
   } else {
     const sessions = await getSessions();
-    return NextResponse.json({ sessions });
+    const enriched = sessions.map(s => ({ ...s, running: isRunning(s.id) }));
+    return NextResponse.json({ sessions: enriched });
   }
 }
 

@@ -2,7 +2,7 @@ import { Agent } from '@mariozechner/pi-agent-core';
 import { getModel } from '@mariozechner/pi-ai';
 import { loadTools, loadSkillTools } from '../tools/loader';
 import { getChatHistory, saveMessage, upsertSession, saveToMemory } from '../memory';
-import { getProviderFor, getModelFor, getChatCompletionExtra, getModelParams } from '../config';
+import { getProviderFor, getModelFor, getChatCompletionExtra, getModelParams, getMaxRounds } from '../config';
 import { getSkillsContext, getSkillMdNames, getSkillData, listSkills, getSkillDescription } from '../lib/skills';
 import fs from 'fs';
 import path from 'path';
@@ -44,28 +44,52 @@ function debugLog(tag: string, ...args: any[]) {
 }
 
 const origFetch = globalThis.fetch;
+const MAX_RETRIES = 2;
+const BASE_BACKOFF_MS = 3000;
+
 globalThis.fetch = async function patchedFetch(input: any, init?: any) {
   const url = typeof input === 'string' ? input : input?.url ?? String(input);
   const method = init?.method ?? 'GET';
-  debugLog('HTTP', `\x1b[33m→ ${method} ${url}\x1b[0m`);
-  const start = Date.now();
-  try {
-    const resp = await origFetch(input, init);
-    const elapsed = Date.now() - start;
-    debugLog('HTTP', `\x1b[${resp.ok ? '32' : '31'}m← ${resp.status} ${resp.statusText} (${elapsed}ms) ${url}\x1b[0m`);
-    if (!resp.ok) {
-      const clone = resp.clone();
-      try {
-        const body = await clone.text();
-        debugLog('HTTP', `\x1b[31m错误响应体: ${body.slice(0, 1000)}\x1b[0m`);
-      } catch {}
+  const isLlmApi = url.includes('/chat/completions') || url.includes('/embeddings');
+
+  for (let attempt = 0; attempt <= (isLlmApi ? MAX_RETRIES : 0); attempt++) {
+    if (attempt > 0) {
+      const delay = BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
+      debugLog('HTTP', `\x1b[33m↻ 第 ${attempt + 1} 次重试，等待 ${delay}ms...\x1b[0m`);
+      await new Promise(r => setTimeout(r, delay));
     }
-    return resp;
-  } catch (err: any) {
-    const elapsed = Date.now() - start;
-    debugLog('HTTP', `\x1b[31m✗ 请求失败 (${elapsed}ms): ${err.message}\x1b[0m  URL: ${url}`);
-    throw err;
+    debugLog('HTTP', `\x1b[33m→ ${method} ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}\x1b[0m`);
+    const start = Date.now();
+    try {
+      const resp = await origFetch(input, init);
+      const elapsed = Date.now() - start;
+      debugLog('HTTP', `\x1b[${resp.ok ? '32' : '31'}m← ${resp.status} ${resp.statusText} (${elapsed}ms) ${url}\x1b[0m`);
+      if (!resp.ok) {
+        const clone = resp.clone();
+        try {
+          const body = await clone.text();
+          debugLog('HTTP', `\x1b[31m错误响应体: ${body.slice(0, 1000)}\x1b[0m`);
+        } catch {}
+        // 对 5xx 和 429 进行重试
+        if (isLlmApi && attempt < MAX_RETRIES && (resp.status >= 500 || resp.status === 429)) {
+          continue;
+        }
+      }
+      return resp;
+    } catch (err: any) {
+      const elapsed = Date.now() - start;
+      debugLog('HTTP', `\x1b[31m✗ 请求失败 (${elapsed}ms): ${err.message}\x1b[0m  URL: ${url}`);
+      // 对超时/网络错误进行重试（但不重试用户主动 abort）
+      const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
+      const isUserAbort = init?.signal?.aborted;
+      if (isLlmApi && attempt < MAX_RETRIES && isTimeout && !isUserAbort) {
+        continue;
+      }
+      throw err;
+    }
   }
+  // 不可达，但 TS 需要
+  throw new Error('fetch retries exhausted');
 };
 
 /** 从 messages 中向后扫描，取最后一条 assistant 文本 */
@@ -254,11 +278,25 @@ ${skillList || '  （无）'}
       }
     });
 
+    const maxRounds = getMaxRounds();
+    let roundCount = 0;
+
     const mainAgent = await createAgentInstance({
       name: 'main',
       systemPrompt,
       tools: finalTools,
-      onEvent
+      onEvent: (event) => {
+        // 每次工具执行完毕计为一轮
+        if (event.type === 'tool_execution_end') {
+          roundCount++;
+          if (roundCount >= maxRounds) {
+            debugLog('GUARD', `已达最大轮次 ${maxRounds}，强制终止 agent 循环`);
+            onEvent({ type: 'max_rounds_reached', maxRounds, roundCount });
+            mainAgent.abort();
+          }
+        }
+        onEvent(event);
+      }
     });
 
     onEvent({ type: 'skills_loaded', skillMd: getSkillMdNames(), tools: finalTools.map((t: { name: string }) => t.name) });

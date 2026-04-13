@@ -38,6 +38,8 @@ export interface BaogeConfig {
     vision: string;
     coding: string;
   };
+  /** Agent 最大工具调用轮次，超过后自动终止，防止死循环。默认 30 */
+  maxRounds: number;
 }
 
 const DEFAULT_MODELS = {
@@ -46,6 +48,8 @@ const DEFAULT_MODELS = {
   vision: 'gpt-4o',
   coding: 'gpt-4o',
 };
+
+const DEFAULT_MAX_ROUNDS = 30;
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_PROVIDER = 'default';
@@ -136,7 +140,7 @@ function normalizeFromLegacy(parsed: any): BaogeConfig {
     vision: hasVisionOverride ? `vision/${p.llmVlModel || p.LLM_VL_MODEL || p.llmModel || p.LLM_MODEL || DEFAULT_MODELS.vision}` : (p.llmVlModel || p.LLM_VL_MODEL || p.llmModel || p.LLM_MODEL || DEFAULT_MODELS.vision),
     coding: hasCodingOverride ? `coding/${p.llmCodingModel || p.LLM_CODING_MODEL || p.llmModel || p.LLM_MODEL || DEFAULT_MODELS.coding}` : (p.llmCodingModel || p.LLM_CODING_MODEL || p.llmModel || p.LLM_MODEL || DEFAULT_MODELS.coding),
   };
-  return { providers, models };
+  return { providers, models, maxRounds: DEFAULT_MAX_ROUNDS };
 }
 
 function loadConfig(): BaogeConfig {
@@ -144,6 +148,7 @@ function loadConfig(): BaogeConfig {
     return {
       providers: { [DEFAULT_PROVIDER]: { apiKey: '', baseUrl: DEFAULT_BASE_URL } },
       models: { ...DEFAULT_MODELS },
+      maxRounds: DEFAULT_MAX_ROUNDS,
     };
   }
 
@@ -163,6 +168,7 @@ function loadConfig(): BaogeConfig {
           vision: taskModels.vision || DEFAULT_MODELS.vision,
           coding: taskModels.coding || DEFAULT_MODELS.coding,
         },
+        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds > 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
       };
     }
 
@@ -181,6 +187,7 @@ function loadConfig(): BaogeConfig {
           vision: m.vision || DEFAULT_MODELS.vision,
           coding: m.coding || DEFAULT_MODELS.coding,
         },
+        maxRounds: typeof parsed.maxRounds === 'number' && parsed.maxRounds > 0 ? parsed.maxRounds : DEFAULT_MAX_ROUNDS,
       };
     }
 
@@ -189,6 +196,7 @@ function loadConfig(): BaogeConfig {
     return {
       providers: { [DEFAULT_PROVIDER]: { apiKey: '', baseUrl: DEFAULT_BASE_URL } },
       models: { ...DEFAULT_MODELS },
+      maxRounds: DEFAULT_MAX_ROUNDS,
     };
   }
 }
@@ -258,6 +266,11 @@ export function getChatCompletionExtra(task: Task): Record<string, number> {
   if (p.presencePenalty != null) out.presence_penalty = p.presencePenalty;
   if (p.frequencyPenalty != null) out.frequency_penalty = p.frequencyPenalty;
   return out;
+}
+
+/** 获取 agent 最大工具调用轮次 */
+export function getMaxRounds(): number {
+  return _config.maxRounds;
 }
 
 export const ENV = isDev ? 'DEV' : 'PROD';

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, User, Loader2, Plus, MessageSquare, Paperclip, X, FileIcon, FolderUp, Square, Menu } from "lucide-react";
 import { LeopardLogo } from "@/components/LeopardLogo";
-import { MarkdownRenderer } from "@/components/MarkdownRenderer"; // 引入 Markdown 渲染器
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ConfigWizard } from "@/components/ConfigWizard";
 
 interface Message {
@@ -16,6 +16,7 @@ interface Session {
   id: string;
   title: string;
   updatedAt: number;
+  running?: boolean;
 }
 
 interface FileWithPath {
@@ -46,17 +47,19 @@ export default function BaogePage() {
       if (!data.configured) setShowWizard(true);
     } catch {}
   }, []);
-  
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<{ controller: AbortController; requestId: string } | null>(null);
+  // 用于取消 SSE 流连接（不影响 agent 运行，只断开监听）
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   const refreshSessions = useCallback(async () => {
     try {
       const res = await fetch('/api/sessions');
       const data = await res.json();
       if (data.sessions) setSessions(data.sessions);
-      return data.sessions;
+      return data.sessions as Session[];
     } catch (e) { return []; }
   }, []);
 
@@ -76,14 +79,132 @@ export default function BaogePage() {
     await refreshSessions();
   };
 
+  /**
+   * 连接到 SSE 流，处理事件。用于初始发送和断线重连。
+   * msgBaseIdx: messages 数组中 assistant 占位消息的索引
+   */
+  const connectToStream = useCallback((targetSessionId: string, msgBaseIdx: number) => {
+    const ac = new AbortController();
+    streamAbortRef.current = ac;
+    setIsLoading(true);
+
+    let toolStatus = "";
+    let mainContent = "";
+    const toolsUsedThisTurn: string[] = [];
+    const getFullContent = () => (toolStatus ? toolStatus + (mainContent ? "\n\n" + mainContent : "") : mainContent) || "";
+    const updateMsg = (content: string) => setMessages(prev => {
+      const n = [...prev];
+      if (msgBaseIdx < n.length && n[msgBaseIdx]?.role === "assistant") {
+        n[msgBaseIdx] = { ...n[msgBaseIdx], content };
+      }
+      return n;
+    });
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/stream?sessionId=${targetSessionId}`, { signal: ac.signal });
+        if (!res.ok || !res.body) {
+          // 没有运行中的 agent（已结束或 404）
+          setIsLoading(false);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const ev = JSON.parse(line.slice(6));
+              if (ev.type === "request_id") {
+                // 记录 requestId 以支持 abort
+                abortRef.current = { controller: ac, requestId: ev.requestId };
+              } else if (ev.type === "skills_loaded") {
+                const all = [...(ev.skillMd || []), ...(ev.tools || [])];
+                if (all.length > 0) setLoadedSkills(all);
+              } else if (ev.type === "tool_start") {
+                const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
+                toolsUsedThisTurn.push(`${agentLabel}${ev.toolName}`);
+                let argStr = "";
+                if (ev.args && typeof ev.args === "object") {
+                  const a = ev.args;
+                  argStr = a.command ?? (a.operation && a.path ? `${a.operation} ${a.path}` : a.path) ?? JSON.stringify(a).slice(0, 60);
+                } else if (ev.args) argStr = String(ev.args).slice(0, 60);
+                toolStatus += `⚡ **${agentLabel}正在执行:** \`${ev.toolName}\`${argStr ? ` \`${String(argStr).slice(0, 80)}${String(argStr).length > 80 ? "…" : ""}\`` : ""}\n\n`;
+              } else if (ev.type === "tool_end") {
+                const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
+                toolStatus += `✅ **${agentLabel}**\`${ev.toolName}\` 已完成\n\n`;
+              } else if (ev.type === "text_delta" && ev.delta) {
+                mainContent += ev.delta;
+              } else if (ev.type === "message_end" && ev.text) {
+                mainContent = ev.text;
+              } else if (ev.type === "error") {
+                mainContent += `\n\n⚠️ ${ev.message}`;
+              } else if (ev.type === "done" && !getFullContent().trim()) {
+                mainContent = "豹哥想了想，没有给出明确回复。";
+              } else if (ev.type === "aborted") {
+                mainContent += (mainContent ? "\n\n" : "") + "⚠️ 已停止。";
+              } else if (ev.type === "max_rounds_reached") {
+                mainContent += (mainContent ? "\n\n" : "") + `⚠️ 已达到最大轮次 (${ev.maxRounds})，自动停止。`;
+              }
+              updateMsg(getFullContent());
+            } catch (_) {}
+          }
+        }
+        await refreshSessions();
+      } catch (err) {
+        const aborted = (err as Error)?.name === 'AbortError';
+        if (!aborted) {
+          updateMsg(getFullContent() || "⚠️ 豹哥内核连接异常。");
+        }
+      } finally {
+        if (toolsUsedThisTurn.length > 0) {
+          setMessages(prev => {
+            const n = [...prev];
+            if (msgBaseIdx < n.length && n[msgBaseIdx]?.role === "assistant") {
+              n[msgBaseIdx] = { ...n[msgBaseIdx], toolsUsed: toolsUsedThisTurn };
+            }
+            return n;
+          });
+        }
+        streamAbortRef.current = null;
+        abortRef.current = null;
+        setIsLoading(false);
+      }
+    })();
+  }, [refreshSessions]);
+
   const switchSession = async (id: string) => {
     if (id === sessionId && messages.length > 0) return;
+    // 断开当前的 SSE 流（不 abort agent）
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    setIsLoading(false);
     setSessionId(id);
     try {
       const res = await fetch(`/api/sessions?sessionId=${id}`);
       const data = await res.json();
       if (data.history) {
-        setMessages(data.history.length === 0 ? [{ role: "assistant", content: "豹哥已上线。本对话尚无记录。" }] : data.history.map((h: any) => ({ role: h.role, content: h.content })));
+        const loadedMessages: Message[] = data.history.length === 0
+          ? [{ role: "assistant", content: "豹哥已上线。本对话尚无记录。" }]
+          : data.history.map((h: any) => ({ role: h.role, content: h.content }));
+        setMessages(loadedMessages);
+
+        // 如果该会话有正在运行的 agent，自动重连
+        if (data.running) {
+          // 追加一个空的 assistant 占位消息用于流式更新
+          const reconnectIdx = loadedMessages.length;
+          setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+          // 用 setTimeout 确保 state 已更新
+          setTimeout(() => connectToStream(id, reconnectIdx), 0);
+        }
       }
     } catch {}
   };
@@ -139,102 +260,61 @@ export default function BaogePage() {
       apiPrompt = `${input}\n\n[当前会话刚上传的资产，可直接使用以下路径]\n${assetHint}`;
     }
     setInput("");
-    setIsLoading(true);
-    let toolStatus = "";
-    let mainContent = "";
-    const toolsUsedThisTurn: string[] = [];
-    const getFullContent = () => (toolStatus ? toolStatus + (mainContent ? "\n\n" + mainContent : "") : mainContent) || "";
+
+    // 追加用户消息和 assistant 占位
     setMessages(prev => [...prev, { role: "user", content: displayInput }, { role: "assistant", content: "" }]);
-    const streamMsgIdx = messages.length + 1;
-    const updateMsg = (content: string) => setMessages(prev => { const n = [...prev]; n[streamMsgIdx] = { role: "assistant", content }; return n; });
-    const ac = new AbortController();
+    const streamMsgIdx = messages.length + 1; // +1 for user msg, pointing to assistant placeholder
+
     const rid = `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    abortRef.current = { controller: ac, requestId: rid };
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         body: JSON.stringify({ prompt: apiPrompt, sessionId, requestId: rid }),
         headers: { "Content-Type": "application/json" },
-        signal: ac.signal
       });
-      if (!res.ok || !res.body) throw new Error("Stream failed");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const ev = JSON.parse(line.slice(6));
-            if (ev.type === "skills_loaded") {
-              const all = [...(ev.skillMd || []), ...(ev.tools || [])];
-              if (all.length > 0) setLoadedSkills(all);
-            } else if (ev.type === "tool_start") {
-              const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
-              toolsUsedThisTurn.push(`${agentLabel}${ev.toolName}`);
-              let argStr = "";
-              if (ev.args && typeof ev.args === "object") {
-                const a = ev.args;
-                argStr = a.command ?? (a.operation && a.path ? `${a.operation} ${a.path}` : a.path) ?? JSON.stringify(a).slice(0, 60);
-              } else if (ev.args) argStr = String(ev.args).slice(0, 60);
-              toolStatus += `⚡ **${agentLabel}正在执行:** \`${ev.toolName}\`${argStr ? ` \`${String(argStr).slice(0, 80)}${String(argStr).length > 80 ? "…" : ""}\`` : ""}\n\n`;
-            } else if (ev.type === "tool_end") {
-              const agentLabel = ev.agentName && ev.agentName !== 'main' ? `[${ev.agentName}] ` : "";
-              toolStatus += `✅ **${agentLabel}**\`${ev.toolName}\` 已完成\n\n`;
-            } else if (ev.type === "text_delta" && ev.delta) {
-              mainContent += ev.delta;
-            } else if (ev.type === "message_end" && ev.text) {
-              mainContent = ev.text;
-            } else if (ev.type === "error") {
-              mainContent += `\n\n⚠️ ${ev.message}`;
-            } else if (ev.type === "done" && !getFullContent().trim()) {
-              mainContent = "豹哥想了想，没有给出明确回复。";
-            } else if (ev.type === "aborted") {
-              mainContent += (mainContent ? "\n\n" : "") + "⚠️ 已停止。";
-            }
-            updateMsg(getFullContent());
-          } catch (_) {}
-        }
-      }
-      await refreshSessions();
-    } catch (err) {
-      const aborted = (err as Error)?.name === 'AbortError';
-      if (!aborted) updateMsg(getFullContent() || "⚠️ 豹哥内核连接异常。");
-      else if (!getFullContent().trim()) updateMsg("⚠️ 已停止。");
-    } finally {
-      if (toolsUsedThisTurn.length > 0) {
+
+      if (res.status === 409) {
+        // 该会话已有 agent 在运行，自动重连
         setMessages(prev => {
           const n = [...prev];
-          const idx = n.length - 1;
-          if (n[idx]?.role === "assistant") {
-            n[idx] = { ...n[idx], toolsUsed: toolsUsedThisTurn };
-          }
+          n[streamMsgIdx] = { role: "assistant", content: "⚡ 该会话正在执行中，正在重新连接..." };
           return n;
         });
+        connectToStream(sessionId, streamMsgIdx);
+        return;
       }
-      abortRef.current = null;
-      setIsLoading(false);
+
+      if (!res.ok) throw new Error("请求失败");
+      // agent 已在后台启动，连接到 SSE 流
+      connectToStream(sessionId, streamMsgIdx);
+    } catch (err) {
+      setMessages(prev => {
+        const n = [...prev];
+        n[streamMsgIdx] = { role: "assistant", content: "⚠️ 豹哥内核连接异常。" };
+        return n;
+      });
     }
   };
 
   const handleStop = () => {
     const current = abortRef.current;
-    if (!current) return;
-    current.controller.abort();
-    fetch('/api/chat/abort', {
-      method: 'POST',
-      body: JSON.stringify({ requestId: current.requestId }),
-      headers: { 'Content-Type': 'application/json' }
-    }).catch(() => {});
+    if (current) {
+      // 通知服务端停止 agent
+      fetch('/api/chat/abort', {
+        method: 'POST',
+        body: JSON.stringify({ requestId: current.requestId }),
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(() => {});
+    }
+    // 同时断开 SSE 流
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+    }
   };
 
   return (
-    <main 
+    <main
       className="flex h-screen bg-[#0a0a0a] text-[#e0e0e0] font-sans overflow-hidden relative"
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
@@ -277,7 +357,11 @@ export default function BaogePage() {
             {loadedSkills.length > 0 && <p className="text-[10px] text-white/30 mt-1 truncate">{loadedSkills.join(', ')}</p>}
           </a>
           {sessions.map((s) => (
-            <div key={s.id} onClick={() => { switchSession(s.id); setSidebarOpen(false); }} className={`flex items-center gap-3 px-4 py-4 rounded-lg cursor-pointer transition-all border ${sessionId === s.id ? "bg-white/5 text-orange-500 border-orange-500/20" : "bg-transparent text-white/20 border-transparent hover:bg-white/5"}`}><MessageSquare className="w-4 h-4 shrink-0" /><span className="text-sm font-semibold truncate">{s.title}</span></div>
+            <div key={s.id} onClick={() => { switchSession(s.id); setSidebarOpen(false); }} className={`flex items-center gap-3 px-4 py-4 rounded-lg cursor-pointer transition-all border ${sessionId === s.id ? "bg-white/5 text-orange-500 border-orange-500/20" : "bg-transparent text-white/20 border-transparent hover:bg-white/5"}`}>
+              <MessageSquare className="w-4 h-4 shrink-0" />
+              <span className="text-sm font-semibold truncate flex-1">{s.title}</span>
+              {s.running && <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse shrink-0" />}
+            </div>
           ))}
         </div>
       </aside>
