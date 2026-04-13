@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { getWorkspaceDir } from '../lib/workspace';
 
 const execAsync = promisify(exec);
 
@@ -19,18 +20,23 @@ function isSimilar(cmd: string): boolean {
 
 export default {
   name: 'run_command',
-  description: 'Execute a shell command on the local machine. Use param command for the exact command string.',
+  description: 'Execute a shell command. Working directory defaults to the session workspace. Use WORKSPACE env var to reference workspace path in scripts.',
   parameters: z.object({
     command: z.string().describe('Shell command to run')
   }),
-  execute: async (params: { command: string }) => {
+  execute: async (params: { command: string }, context?: { sessionId?: string }) => {
     const cmd = params.command;
     const similar = isSimilar(cmd);
     recentCommands.push(cmd);
     if (recentCommands.length > RECENT_SIZE) recentCommands.shift();
 
+    const cwd = context?.sessionId ? getWorkspaceDir(context.sessionId) : process.cwd();
+
     try {
-      const { stdout, stderr } = await execAsync(cmd);
+      const { stdout, stderr } = await execAsync(cmd, {
+        cwd,
+        env: { ...process.env, WORKSPACE: cwd },
+      });
       let text = `stdout: ${stdout.trim()}\nstderr: ${stderr.trim()}`;
       if (similar) text = `⚠️ 此命令与近期执行过的命令高度相似，若仍未解决问题请换一种思路或向用户说明。\n\n${text}`;
       return text;

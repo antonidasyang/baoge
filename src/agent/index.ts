@@ -4,6 +4,7 @@ import { loadTools, loadSkillTools } from '../tools/loader';
 import { getChatHistory, saveMessage, upsertSession, saveToMemory } from '../memory';
 import { getProviderFor, getModelFor, getChatCompletionExtra, getModelParams, getMaxRounds } from '../config';
 import { getSkillsContext, getSkillMdNames, getSkillData, listSkills, getSkillDescription } from '../lib/skills';
+import { getWorkspaceDir, getUploadsDir } from '../lib/workspace';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -186,7 +187,17 @@ export async function runBaoge(
       return desc ? `  - ${s.name}: ${desc}` : `  - ${s.name}`;
     }).join('\n');
 
+    const workspaceDir = getWorkspaceDir(sessionId);
+    const uploadsDir = getUploadsDir();
+
     const basePrompt = `你是一个助手，叫"豹哥"。
+
+【工作空间】
+- 你的工作目录: ${workspaceDir}
+- 文件操作（读写、删除）限制在工作目录内。用户上传的文件在 ${uploadsDir}（只读）。
+- 所有 shell 命令的默认工作目录也是你的工作空间。
+- 当你生成了文件需要分享给用户时，使用 Markdown 链接格式: [文件名](/api/workspace/${sessionId}/文件名)
+- 例如: [报表.xlsx](/api/workspace/${sessionId}/报表.xlsx)
 
 【避免复读】
 - 不要重复执行相同或高度相似的命令。若某命令已执行过且结果不理想，应换一种思路或向用户说明情况。
@@ -203,7 +214,7 @@ ${skillList || '  （无）'}
     const skillsCtx = getSkillsContext();
     const systemPrompt = basePrompt + (skillsCtx ? skillsCtx : '');
 
-    const tools = await loadTools();
+    const tools = await loadTools({ sessionId });
 
     // 注入委派工具
     const delegateTool = {
@@ -220,7 +231,7 @@ ${skillList || '  （无）'}
         const skillData = getSkillData(params.agent_name);
         if (!skillData) return `错误：找不到名为 ${params.agent_name} 的子智能体。`;
 
-        const subTools = await loadSkillTools(params.agent_name);
+        const subTools = await loadSkillTools(params.agent_name, { sessionId });
         const subagent = await createAgentInstance({
           name: params.agent_name,
           systemPrompt: skillData.skillMd || `你是一个专门负责 ${params.agent_name} 的子智能体。`,
